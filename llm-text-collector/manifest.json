@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Nirma AI",
+  "version": "0.1.0",
+  "description": "Collect selected text or page extracts, tag them, and export/POST for LLM analysis.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "contextMenus"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "LLM Inbox",
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "16": "icons/icon16.png"
+  }
+}

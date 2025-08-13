@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Optional tiny tweaks for the popup look & feel */
+@layer components {
+  .btn { @apply px-3 py-2 rounded-md text-sm font-medium border transition w-full md:w-auto; }
+  .btn-primary { @apply btn bg-gray-900 text-white border-gray-900 hover:opacity-90; }
+  .btn-ghost { @apply btn bg-white text-gray-900 border-gray-300 hover:bg-gray-50; }
+  .btn-danger { @apply btn bg-red-50 text-red-700 border-red-200 hover:bg-red-100; }
+  .card { @apply rounded-lg border border-gray-200 bg-white shadow-sm; }
+  .muted { @apply text-gray-500; }
+}
