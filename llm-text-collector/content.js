@@ -15,3 +15,19 @@
   };
   chrome.runtime.sendMessage({ type: 'PAGE_EXTRACT', payload });
 })();
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === "PAGE_EXTRACT") {
+    // build your extract here
+    const payload = {
+      type: "page_extract",
+      title: document.title,
+      url: location.href,
+      text: document.body.innerText.slice(0, 20000), // example
+      createdAt: new Date().toISOString()
+    };
+    sendResponse({ ok: true, payload });
+  }
+  // Return true only if you plan to call sendResponse asynchronously.
+  return false;
+});

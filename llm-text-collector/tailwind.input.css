@@ -4,10 +4,54 @@
 
 /* Optional tiny tweaks for the popup look & feel */
 @layer components {
-  .btn { @apply px-3 py-2 rounded-md text-sm font-medium border transition w-full md:w-auto; }
-  .btn-primary { @apply btn bg-gray-900 text-white border-gray-900 hover:opacity-90; }
-  .btn-ghost { @apply btn bg-white text-gray-900 border-gray-300 hover:bg-gray-50; }
-  .btn-danger { @apply btn bg-red-50 text-red-700 border-red-200 hover:bg-red-100; }
+  .btn { @apply px-3 py-2 rounded-md font-medium transition-colors; }
+  .btn-gradient { @apply text-white font-medium rounded-lg text-sm px-3 py-1.5 text-center transition-all duration-200 ease-in-out focus:outline-none focus:ring-4;}
+  .btn-blue {
+    @apply bg-gradient-to-r from-cyan-500 to-blue-500 hover:bg-gradient-to-bl
+           focus:ring-cyan-300 dark:focus:ring-cyan-800;
+  }
+  .btn-green {
+    @apply bg-gradient-to-r from-green-400 to-lime-500 hover:bg-gradient-to-bl
+           focus:ring-green-300 dark:focus:ring-green-800;
+  }
+  .btn-purple {
+    @apply bg-gradient-to-r from-purple-500 to-pink-500 hover:bg-gradient-to-bl
+           focus:ring-purple-300 dark:focus:ring-purple-800;
+  }
+  .btn-red {
+    @apply bg-gradient-to-r from-red-500 to-orange-500 hover:bg-gradient-to-bl
+           focus:ring-red-300 dark:focus:ring-red-800;
+  }
   .card { @apply rounded-lg border border-gray-200 bg-white shadow-sm; }
   .muted { @apply text-gray-500; }
+}
+
+@layer components {
+  /* Card + header */
+  .snippet-card   { @apply rounded-xl border border-gray-200 bg-white shadow-sm p-3; }
+  .snippet-head   { @apply flex items-start justify-between gap-3; }
+  .snippet-title  { @apply text-sm font-medium text-indigo-600 hover:underline break-words; }
+  .snippet-meta   { @apply text-[11px] text-gray-500 break-all; }
+
+  /* Actions */
+  .btn-ghost-sm   { @apply inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50; }
+  .btn-danger-sm  { @apply inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs text-red-700 hover:bg-red-100; }
+  .chip           { @apply inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600; }
+
+  /* Body text area */
+  .snippet-body {
+    @apply rounded-lg bg-gray-50 border border-gray-200 p-3
+           text-[13px] leading-6 text-gray-800 whitespace-pre-wrap break-words;
+  }
+  .snippet-body.collapsed { @apply max-h-40 overflow-y-auto; }
+  .snippet-fade { @apply pointer-events-none absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-50 to-transparent; }
+
+  /* Inputs below text */
+  .tags-input     { @apply w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 text-sm; }
+  .note-input     { @apply w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 text-sm; }
+}
+
+@layer base {
+  #list { scrollbar-width: none; }          /* Firefox */
+  #list::-webkit-scrollbar { display: none; } /* Chrome */
 }
