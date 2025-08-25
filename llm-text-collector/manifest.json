@@ -7,17 +7,28 @@
     "storage",
     "activeTab",
     "scripting",
-    "contextMenus"
+    "contextMenus",
+    "identity"
   ],
-  "host_permissions": ["<all_urls>"],
+  "host_permissions": [
+    "https://*/*",
+    "http://*/*",
+    "https://www.youtube.com/*",
+    "https://m.youtube.com/*",
+    "https://consent.youtube.com/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/watch*"],
-      "js": ["youtube.js"],
+      "matches": [
+        "https://www.youtube.com/watch*"
+      ],
+      "js": [
+        "youtube.js"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -27,5 +38,11 @@
   },
   "icons": {
     "16": "icons/icon16.png"
+  },
+  "oauth2": {
+    "client_id": "913007410021-cl14rbmmmoade1r3didofvcjub8v4u0q.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/youtube.readonly"
+    ]
   }
 }

@@ -1,151 +1,148 @@
-// Util: parse VTT into cues
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const waitFor = (selector, { root = document, timeout = 10000, poll = 100 } = {}) =>
+  new Promise((resolve, reject) => {
+    const t0 = performance.now();
+    const tick = () => {
+      const el = root.querySelector(selector);
+      if (el) return resolve(el);
+      if (performance.now() - t0 > timeout) return reject(new Error(`Timeout waiting for ${selector}`));
+      setTimeout(tick, poll);
+    };
+    tick();
+  });
+
+async function handleScrapeTranscript(sendResponse) {
+  try {
+    // Try more robust selector for the "more actions" button
+    let moreActionsButton = document.querySelector('button[aria-label="More actions"]');
+    if (!moreActionsButton) {
+      // Fallback to previous selector if aria-label not found
+      moreActionsButton = document.querySelector('ytd-menu-renderer.ytd-video-primary-info-renderer > #button-shape > button');
+    }
+
+    if (!moreActionsButton) {
+      throw new Error("More actions button not found.");
+    }
+    moreActionsButton.click();
+    await waitFor('tp-yt-paper-listbox', { timeout: 2000 }); // Wait for the menu to appear
+
+    // Find the "Show transcript" button by its text content using XPath
+    const showTranscriptButton = document.evaluate(
+      "//*[text()='Show transcript']",
+      document,
+      null,
+      XPathResult.FIRST_ORDERED_NODE_TYPE,
+      null
+    ).singleNodeValue;
+
+
+    if (!showTranscriptButton) {
+      throw new Error("Show transcript button not found.");
+    }
+    showTranscriptButton.click();
+    await waitFor('ytd-transcript-renderer', { timeout: 5000 }); // Wait for the transcript to load
+
+    // Wait for the transcript renderer to appear
+    const transcriptRenderer = document.querySelector('ytd-transcript-renderer');
+    if (!transcriptRenderer) {
+        throw new Error("Transcript renderer not found.");
+    }
+
+    // Get all the transcript segments
+    let segmentElements = transcriptRenderer.querySelectorAll('ytd-transcript-segment-renderer');
+    if (!segmentElements || segmentElements.length === 0) {
+      // Try to expand the transcript if it's collapsed
+      const expandButton = transcriptRenderer.querySelector('#expand-button');
+      if (expandButton) {
+        expandButton.click();
+        await sleep(500);
+        segmentElements = transcriptRenderer.querySelectorAll('ytd-transcript-segment-renderer');
+      }
+    }
+
+    if (!segmentElements || segmentElements.length === 0) {
+        throw new Error("Transcript segments not found even after trying to expand.");
+    }
+
+    const segments = Array.from(segmentElements).map(segment => {
+      // More robust selectors for timestamp and text within segments
+      const timestampEl = segment.querySelector('ytd-formatted-string.ytd-transcript-segment-renderer, .segment-timestamp');
+      const textEl = segment.querySelector('yt-formatted-string.ytd-transcript-segment-renderer, .segment-text');
+      const ts = timestampEl ? timestampEl.innerText.trim() : '';
+      const text = textEl ? textEl.innerText.trim() : '';
+      return { ts, text };
+    });
+
+    const payload = {
+      type: "TRANSCRIPT_CAPTURED",
+      title: document.title,
+      url: location.href,
+      segments: segments,
+      capturedAt: new Date().toISOString(),
+    };
+    chrome.runtime.sendMessage(payload);
+    sendResponse({ ok: true });
+
+  } catch (error) {
+    console.error("Transcript scraping failed:", error);
+    const payload = {
+      title: document.title,
+      url: location.href,
+      text: `(No transcript available for this video: ${error.message})`,
+      source_type: "youtube_transcript",
+    };
+    chrome.runtime.sendMessage({ type: "SAVE_SNIPPET", payload });
+    sendResponse({ ok: false, error: error.message });
+  }
+}
+
+async function getCaptions(videoId, lang = "en") {
+  const response = await fetch(`https://www.youtube.com/watch?v=${videoId}`);
+  const html = await response.text();
+  const playerResponseRegex = /ytInitialPlayerResponse\s*=\s*({.+?});/;
+  const match = html.match(playerResponseRegex);
+  if (!match) {
+    return null;
+  }
+  const playerResponse = JSON.parse(match[1]);
+  const captionTracks = playerResponse.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  if (!captionTracks) {
+    return null;
+  }
+  const track = captionTracks.find((t) => t.languageCode === lang);
+  if (!track) {
+    return null;
+  }
+  const captionResponse = await fetch(track.baseUrl);
+  const vtt = await captionResponse.text();
+  return vtt;
+}
+
 function parseVTT(vtt) {
+  const lines = vtt.split("\n");
   const cues = [];
-  const lines = vtt.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].includes("-->")) {
-      const [start, end] = lines[i].split("-->").map(s => s.trim());
-      let text = "";
+      const [start, end] = lines[i].split(" --> ").map((time) => {
+        const parts = time.split(":");
+        return +parts[0] * 3600 + +parts[1] * 60 + +parts[2];
+      });
+      cues.push({ start, end, text: lines[i + 1] });
       i++;
-      while (i < lines.length && lines[i].trim() !== "") {
-        text += (text ? "\n" : "") + lines[i].trim();
-        i++;
-      }
-      cues.push({ start: toSec(start), end: toSec(end), text });
     }
   }
   return cues;
 }
-function toSec(ts) {
-  // 00:01:23.456
-  const m = ts.match(/(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)/);
-  if (!m) return 0;
-  const h = Number(m[1] || 0), mm = Number(m[2]), ss = Number(m[3]);
-  return h * 3600 + mm * 60 + ss;
-}
-function currentVideo() {
-  const video = document.querySelector("video");
-  return video && !isNaN(video.currentTime) ? video : null;
-}
-function videoInfo() {
-  const title =
-    document.querySelector("h1.title yt-formatted-string")?.textContent?.trim() ||
-    document.title.replace(" - YouTube", "").trim();
-  const url = location.href;
-  return { title, url };
-}
 
-// Try to find an active caption track URL from the page.
-function getCaptionTrackUrl() {
-  // Pull from ytInitialPlayerResponse if available
-  try {
-    const ytd = window.ytInitialPlayerResponse
-      || (window.ytplayer && window.ytplayer.config && window.ytplayer.config.args && JSON.parse(window.ytplayer.config.args.player_response));
-    const tracks = ytd?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-    if (tracks?.length) {
-      // Prefer English or auto-generated if nothing else
-      const preferred = tracks.find(t => t.languageCode?.startsWith("en")) || tracks[0];
-      // request VTT format if possible
-      const url = preferred.baseUrl + (preferred.baseUrl.includes("?") ? "&" : "?") + "fmt=vtt";
-      return url;
-    }
-  } catch (e) {}
-  return null;
-}
-
-async function fetchCaptionWindow(seconds, windowSec = 20) {
-  const v = currentVideo();
-  if (!v) throw new Error("No video element found.");
-  const trackUrl = getCaptionTrackUrl();
-  if (!trackUrl) throw new Error("No caption track found on this video.");
-  const res = await fetch(trackUrl, { credentials: "include" });
-  if (!res.ok) throw new Error("Failed to fetch captions.");
-  const vtt = await res.text();
-  const cues = parseVTT(vtt);
-  const from = seconds - windowSec;
-  const to = seconds + windowSec;
-  const snippet = cues
-    .filter(c => c.end >= from && c.start <= to)
-    .map(c => c.text)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return snippet || "(no caption text in this window)";
-}
-
-// Save to your existing storage schema
-async function saveSnippet(snippet) {
-  // You likely already have a storage helper; here’s a minimal example:
-  const key = "llm_inbox";
-  const items = (await chrome.storage.local.get(key))[key] || [];
-  items.unshift(snippet);
-  await chrome.storage.local.set({ [key]: items });
-}
-
-async function bookmarkTimestamp() {
-  const v = currentVideo();
-  const { title, url } = videoInfo();
-  const t = Math.floor(v?.currentTime || 0);
-  const bookmarkedUrl = new URL(url);
-  bookmarkedUrl.searchParams.set("t", `${t}s`);
-  await saveSnippet({
-    type: "youtube_bookmark",
-    title,
-    url: bookmarkedUrl.toString(),
-    createdAt: new Date().toISOString(),
-    meta: { seconds: t }
-  });
-}
-
-async function captureCaptionNow(windowSec) {
-  const v = currentVideo();
-  const { title, url } = videoInfo();
-  const t = Math.floor(v?.currentTime || 0);
-  const text = await fetchCaptionWindow(t, windowSec);
-  const bookmarkedUrl = new URL(url);
-  bookmarkedUrl.searchParams.set("t", `${t}s`);
-  await saveSnippet({
-    type: "youtube_caption",
-    title,
-    url: bookmarkedUrl.toString(),
-    text,
-    createdAt: new Date().toISOString(),
-    meta: { seconds: t, windowSec }
-  });
-}
-
-chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
-    if (msg.type === "YT_BOOKMARK") {
-      const t = nowSec();
-      const u = new URL(location.href); u.searchParams.set("t", `${t}s`);
-      await saveSnippet({
-        type:"youtube_bookmark",
-        title: title(),
-        url: u.toString(),
-        createdAt: new Date().toISOString(),
-        meta:{ seconds: t }
-      });
+    if (msg.type === "YT_SCRAPE_TRANSCRIPT") {
+      await handleScrapeTranscript(sendResponse);
     }
-    if (msg.type === "YT_CAPTURE_CAPTION") {
-      const t = nowSec();
-      const text = await fetchCaptionWindow(t, msg.windowSec ?? 20);
-      const u = new URL(location.href); u.searchParams.set("t", `${t}s`);
-      await saveSnippet({
-        type:"youtube_caption",
-        title: title(),
-        url: u.toString(),
-        text,
-        createdAt: new Date().toISOString(),
-        meta:{ seconds: t, windowSec: msg.windowSec ?? 20 }
-      });
-    }
-    if (msg.type === "YT_GET_META") {
-      sendResponse({ title: title(), url: location.href, seconds: nowSec() });
-      return; // must return to keep port alive only if async — we already responded sync
-    }
-  })().catch(console.error);
+  })();
 
-  // Return true if we *will* async sendResponse later (not needed here).
-  return false;
+  return true;
 });
+
+console.log("YouTube content script loaded.");

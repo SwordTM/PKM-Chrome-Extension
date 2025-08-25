@@ -1,323 +1,248 @@
-import { getAll, setAll, deleteByHash, addSnippet } from './storage.js';
+import { addOne, getAll, removeById } from "./storage.js";
+import { isInjectable } from "./utils.js";
 
 const els = {
-  list: document.getElementById('list'),
-  empty: document.getElementById('empty'),
-  capture: document.getElementById('capturePage'),
-  exportJson: document.getElementById('exportJson'),
-  sendToLLM: document.getElementById('sendToLLM'),
-  clearAll: document.getElementById('clearAll')
+  list: document.getElementById("list"),
+  empty: document.getElementById("empty"),
+  capture: document.getElementById("capturePage"),
+  exportJson: document.getElementById("exportJson"),
+  sendToLLM: document.getElementById("sendToLLM"),
+  clearAll: document.getElementById("clearAll"),
+  // YouTube Buttons
+  ytScrapeTranscript: document.getElementById("ytScrapeTranscript"),
+  
 };
 
-function renderList(items) {
-  els.list.innerHTML = '';
-  if (!items || items.length === 0) {
-    els.empty.style.display = 'block';   // show empty message
-    return;
-  }
-  els.empty.style.display = 'none' ; // hide empty message
-
-  const tpl = document.getElementById('itemTpl');
-  items.forEach(sn => {
-    const li = tpl.content.firstElementChild.cloneNode(true);
-    li.querySelector('.title').textContent = sn.title || '(untitled)';
-    li.querySelector('.title').href = sn.url || '#';
-    li.querySelector('.createdAt').textContent = new Date(sn.createdAt).toLocaleString();
-    li.querySelector('.text').textContent = sn.text || '';
-    li.querySelector('.tags').value = (sn.tags || []).join(', ');
-    li.querySelector('.note').value = sn.note || '';
-
-    li.querySelector('.save').addEventListener('click', async () => {
-      const tags = li.querySelector('.tags').value.split(',').map(s => s.trim()).filter(Boolean);
-      const note = li.querySelector('.note').value;
-      const items2 = await getAll();
-      const idx = items2.findIndex(x => x.contentHash === sn.contentHash);
-      if (idx >= 0) {
-        items2[idx] = { ...items2[idx], tags, note };
-        await setAll(items2);
-        await load();
-      }
-    });
-
-    li.querySelector('.delete').addEventListener('click', async () => {
-      await deleteByHash(sn.contentHash);
-      await load();
-    });
-
-    enhanceItem(li);
-
-    els.list.appendChild(li);
-  });
-}
-
 function renderItem(item) {
+  if (item.type === 'TRANSCRIPT_CAPTURED') {
+    return renderTranscript(item);
+  }
+  const tpl = document.getElementById("itemTpl");
   const li = tpl.content.firstElementChild.cloneNode(true);
 
-  li.querySelector(".title").textContent = item.title || "";
-  li.querySelector(".title").href = item.url || "";
-  li.querySelector(".createdAt").textContent =
-    item.createdAt ? new Date(item.createdAt).toLocaleString() : "";
+  li.dataset.id = item.id;
 
-  const textEl = li.querySelector(".text");
-  if (textEl) textEl.textContent = item.text || "";
+  li.querySelector(".title").textContent = item.title || "(untitled)";
+  li.querySelector(".title").href = item.url || "#";
+  li.querySelector(".createdAt").textContent = new Date(
+    item.captured_at || item.capturedAt
+  ).toLocaleString();
+  li.querySelector(".text").textContent = item.text || "";
 
-  enhanceItem(li);
-  list.prepend(li);
-  els.empty.style.display = 'none';  // hide empty message since we now have items
-  renderCount();
+  const sourceEl = li.querySelector(".source");
+  let icon = "🌐";
+  if (item.source_type?.startsWith("youtube")) {
+    icon = "📺";
+  } else if (item.url?.includes("pdf")) {
+    icon = "📄";
+  } else if (item.url?.includes("github.com")) {
+    icon = "🐙";
+  } else if(item.url?.includes("selection")) {
+    icon = "✂️";
+  }
+  sourceEl.textContent = icon + " " + (new URL(item.url).hostname || "");
+
+  els.list.prepend(li);
 }
 
-const list = document.getElementById("list");
-const empty = document.getElementById("empty");
-const tpl  = document.getElementById("itemTpl");
+function renderTranscript(item) {
+  const tpl = document.getElementById("transcriptTpl");
+  const li = tpl.content.firstElementChild.cloneNode(true);
+
+  li.dataset.id = item.id;
+
+  li.querySelector(".title").textContent = item.title || "(untitled)";
+  li.querySelector(".title").href = item.url || "#";
+  li.querySelector(".createdAt").textContent = new Date(
+    item.capturedAt || item.captured_at || Date.now()
+  ).toLocaleString();
+
+  const segments = Array.isArray(item.segments) ? item.segments : [];
+  const fullText = segments.length ? segments.map(s => s.text || "").join("\n") : (item.text || "");
+  li.querySelector(".text").textContent = fullText || "(no transcript text)";
+  console.log('Full transcript text:', fullText);
+
+  const segmentsEl = li.querySelector(".transcript-segments");
+  segmentsEl.innerHTML = "";
+  for (const seg of segments) {
+    const liSeg = document.createElement("li");
+    liSeg.classList.add("flex", "items-start", "gap-2", "text-sm");
+    const tsEl = document.createElement("div");
+    tsEl.classList.add("text-gray-600", "w-16", "shrink-0");
+    tsEl.textContent = seg.ts ?? "";
+    const textEl = document.createElement("div");
+    textEl.classList.add("text-gray-900");
+    textEl.textContent = seg.text ?? "";
+    liSeg.appendChild(tsEl);
+    liSeg.appendChild(textEl);
+    segmentsEl.appendChild(liSeg);
+  }
+
+  const sourceEl = li.querySelector(".source");
+  sourceEl.textContent = (item.url?.includes("youtube.com") ? "📺" : "🌐") + " " + (new URL(item.url).hostname || "");
+  els.list.prepend(li);
+}
 
 async function load() {
+  
+
   const items = await getAll();
-  renderList(items);
-}
-
-(async () => {
-  const tab = await getActiveTab();
-  const injectable = isInjectable(tab?.url);
-  const btn = document.getElementById("capturePage");
-  btn.disabled = !injectable;
-  // with Tailwind utility classes:
-  if (!injectable) btn.classList.add("opacity-50", "cursor-not-allowed");
-})();
-
-function enhanceItem(li) {
-  if (li.dataset.enhanced === "1") return;
-  li.dataset.enhanced = "1";
-
-  const bodyEl = li.querySelector(".snippet-body") || li.querySelector(".text");
-  if (!bodyEl) return;
-
-  // collapsed preview styling
-  bodyEl.classList.add("snippet-body", "collapsed");
-  bodyEl.style.position = "relative";
-
-  // fade overlay
-  if (!bodyEl.querySelector(".snippet-fade")) {
-    const fade = document.createElement("div");
-    fade.className = "snippet-fade";
-    bodyEl.appendChild(fade);
+  els.list.innerHTML = "";
+  if (!items || items.length === 0) {
+    els.empty.style.display = "block";
+  } else {
+    els.empty.style.display = "none";
+    items.forEach(renderItem);
   }
-
-  // expand/collapse button
-  let toggle = li.querySelector(".toggle");
-  if (!toggle) {
-    toggle = document.createElement("button");
-    toggle.className =
-      "toggle mt-2 inline-flex items-center rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50";
-    toggle.textContent = "Expand";
-    bodyEl.after(toggle);
-  }
-  toggle.onclick = () => {
-    bodyEl.classList.toggle("collapsed");
-    toggle.textContent = bodyEl.classList.contains("collapsed") ? "Expand" : "Collapse";
-  };
-
-  // --- Auto-tag button logic (moved here) ---
-  const autoBtn = li.querySelector('.autotag');
-  const tagsInput = li.querySelector('.tags');
-  const textEl = li.querySelector('.text');
-
-  autoBtn?.addEventListener('click', async () => {
-    autoBtn.disabled = true;
-    autoBtn.textContent = '…';
-    try {
-      const txt = (textEl?.textContent || '').toLowerCase();
-      const guesses = [];
-      if (txt.includes('youtube')) guesses.push('#youtube');
-      if (txt.includes('agi') || txt.includes('ai')) guesses.push('#ai');
-      if (txt.includes('market')) guesses.push('#markets');
-      const merged = Array.from(new Set([
-        ...(tagsInput.value || '').split(',').map(s => s.trim()).filter(Boolean),
-        ...guesses
-      ]));
-      tagsInput.value = merged.join(', ');
-    } finally {
-      autoBtn.textContent = 'Auto';
-      autoBtn.disabled = false;
-    }
-  });
-}
-
-
-// Capture full-page extract by injecting content.js
-els.capture.addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) return;
-
-  await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    files: ['content.js']
-  });
-});
-
-// Receive extract from content.js
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type === "PAGE_EXTRACT") {
-    try {
-      const payload = {
-        type: "page_extract",
-        title: document.title,
-        url: location.href,
-        text: document.body?.innerText?.slice(0, 20000) || "",
-        createdAt: new Date().toISOString()
-      };
-      sendResponse({ ok: true, payload });
-    } catch (e) {
-      sendResponse({ ok: false, error: String(e) });
-    }
+  if (isYouTubeWatch(tab?.url || "")) {
+    els.capture.style.display = "none";
+    els.ytScrapeTranscript.style.display = "block";
+  } else {
+    els.capture.style.display = "block";
+    els.ytScrapeTranscript.style.display = "none";
   }
-  // we respond synchronously → return false
-  return false;
-});
-
-// Export JSON
-els.exportJson.addEventListener('click', async () => {
-  const items = await getAll();
-  const blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `llm_inbox_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-});
-
-// Send to LLM (placeholder). Point to your local ingestion API.
-els.sendToLLM.addEventListener('click', async () => {
-  const items = await getAll();
-  try {
-    const res = await fetch('http://localhost:8000/ingest', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ snippets: items })
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    alert('Sent to LLM pipeline.');
-  } catch (e) {
-    alert('Failed to send to LLM: ' + e.message);
-  }
-});
-
-// Clear All
-els.clearAll.addEventListener('click', async () => {
-  if (!confirm('Delete all saved snippets?')) return;
-  await chrome.storage.local.set({ snippets: [] });
-  await load();
-});
-
-// --- Youtube helpers ---
-async function getActiveTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab;
 }
-function isInjectable(url="") {
-  try {
-    const u = new URL(url);
-    if (!/^https?:$/.test(u.protocol)) return false;
-    if (u.hostname === "chrome.google.com") return false;
-    return true;
-  } catch { return false; }
-}
-function renderCount() {
-  const n = list.querySelectorAll("li").length;
-  empty?.classList.toggle("hidden", n > 0);
-}
-function toast(msg) {
-  // replace with your UI; for now a simple alert
-  alert(msg);
-}
+
 function isYouTubeWatch(url) {
   try {
     const u = new URL(url);
     return u.hostname.includes("youtube.com") && u.pathname === "/watch";
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
-function show(el, yes) { el.classList.toggle('hidden', !yes); }
 
-// --- elements ---
-const ytBookmarkBtn   = document.getElementById('ytBookmark');
-const ytCaptionNowBtn = document.getElementById('ytCaptionNow');
-const ytTranscribeBtn = document.getElementById('ytTranscribe');
-const capturePageBtn  = document.getElementById('capturePage');
-
-// Call once on load to toggle visibility
-(async () => {
-  const tab = await getActiveTab();
-  const onYT = isYouTubeWatch(tab?.url || "");
-  show(ytBookmarkBtn, onYT);
-  show(ytCaptionNowBtn, onYT);
-  // Only show Transcribe if your build has audio infra (offscreen + tabCapture)
-  const hasOffscreen = !!chrome.offscreen && !!chrome.tabCapture;
-  show(ytTranscribeBtn, onYT && hasOffscreen);
-})();
-
-// --- YT actions ---
-ytBookmarkBtn?.addEventListener('click', async () => {
-  const tab = await getActiveTab();
-  if (!tab?.id) return;
-  chrome.tabs.sendMessage(tab.id, { type: "YT_BOOKMARK" });
-});
-
-ytCaptionNowBtn?.addEventListener('click', async () => {
-  const tab = await getActiveTab();
-  if (!tab?.id) return;
-  // windowSec = 20s around current time; adjust if you like
-  chrome.tabs.sendMessage(tab.id, { type: "YT_CAPTURE_CAPTION", windowSec: 20 });
-});
-
-ytTranscribeBtn?.addEventListener('click', async () => {
-  const tab = await getActiveTab();
-  if (!tab?.id) return;
-  // Ask content script for meta (title/url/time), then let background record audio
-  chrome.tabs.sendMessage(tab.id, { type: "YT_GET_META" }, (meta) => {
-    if (chrome.runtime.lastError) return; // no content script
-    chrome.runtime.sendMessage({
-      type: "OFFSCREEN_TRANSCRIBE",
-      tabId: tab.id,
-      meta,
-      durationSec: 30
-    });
-  });
-});
-
-document.getElementById("capturePage")?.addEventListener("click", async () => {
-  const tab = await getActiveTab();
-  if (!tab?.id) return;
-
-  if (!isInjectable(tab.url)) {
-    alert("Can't capture this page. Try on a regular http(s) page.");
+els.capture.addEventListener("click", async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id || !isInjectable(tab.url)) {
     return;
   }
 
-  // Try sendMessage first (content script may already be there)
-  let res = await chrome.tabs.sendMessage(tab.id, { type: "PAGE_EXTRACT" }).catch(() => null);
-
-  // If no listener, inject content.js and try again
-  if (!res) {
-    try {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
-      res = await chrome.tabs.sendMessage(tab.id, { type: "PAGE_EXTRACT" }).catch(() => null);
-    } catch (e) {
-      console.error("Injection failed:", e);
+  try {
+    let res = await chrome.tabs.sendMessage(tab.id, { type: "PAGE_EXTRACT" });
+    if (res && res.ok) {
+      const newSnippet = await addOne(res.payload);
+      if (newSnippet) {
+        renderItem(newSnippet);
+        els.empty.style.display = "none";
+      }
+    } else {
+      console.error("Capture failed", res?.error);
+    }
+  } catch (e) {
+    if (e.message.includes("Receiving end does not exist")) {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["content.js"],
+      });
+      const res = await chrome.tabs.sendMessage(tab.id, { type: "PAGE_EXTRACT" });
+      if (res && res.ok) {
+        const newSnippet = await addOne(res.payload);
+        if (newSnippet) {
+          renderItem(newSnippet);
+          els.empty.style.display = "none";
+        }
+      }
+    } else {
+      console.error("Capture failed", e);
     }
   }
+});
 
-  if (!res || !res.ok) {
-    console.warn("Capture failed:", res?.error);
-    alert("Capture failed. Check console (Inspect popup) for details.");
-    return;
+els.ytScrapeTranscript.addEventListener("click", async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return;
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: "YT_SCRAPE_TRANSCRIPT" });
+  } catch (e) {
+    if (e.message.includes("Receiving end does not exist")) {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["youtube.js"],
+      });
+      await chrome.tabs.sendMessage(tab.id, { type: "YT_SCRAPE_TRANSCRIPT" });
+    } else {
+      console.error("Transcript scrape failed", e);
+    }
   }
+});
 
-  const saved = { ...res.payload, tags: [], note: "" };
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === "SAVE_SNIPPET") {
+    addOne(msg.payload).then((newSnippet) => {
+      if (newSnippet) {
+        renderItem(newSnippet);
+        els.empty.style.display = "none";
+      }
+    });
+  } else if (msg.type === "TRANSCRIPT_CAPTURED") {
+    console.log("[POPUP] transcript payload received", msg);
+    const text = Array.isArray(msg.segments) ? msg.segments.map(s => s.text || "").join("\n") : "";
+    const toSave = { ...msg, text };     // keep segments + add text for fallback/views
+    addOne(toSave).then((newSnippet) => {
+      if (newSnippet) {
+        renderTranscript(newSnippet);
+        els.empty.style.display = "none";
+      }
+    });
+  }
+});
 
-  // If you also persist to storage, do that here; otherwise render immediately:
-  // await addSnippet(saved);
-  renderItem(saved);
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === "local" && changes.snippets) {
+    load();
+  }
+});
+
+els.list.addEventListener("click", async (e) => {
+  const deleteBtn = e.target.closest(".delete");
+  if (deleteBtn) {
+    const li = deleteBtn.closest("li");
+    const id = li.dataset.id;
+    if (id) {
+      await removeById(id);
+      li.remove();
+      const items = await getAll();
+      if (items.length === 0) {
+        els.empty.style.display = "block";   
+      }
+    }
+  }
+});
+
+els.exportJson.addEventListener("click", async () => {
+  const items = await getAll();
+  const blob = new Blob([JSON.stringify(items, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `llm_inbox_${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+els.sendToLLM.addEventListener("click", async () => {
+  const items = await getAll();
+  try {
+    const res = await fetch("http://localhost:8000/ingest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ snippets: items }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    alert("Sent to LLM pipeline.");
+  } catch (e) {
+    alert("Failed to send to LLM: " + e.message);
+  }
+});
+
+els.clearAll.addEventListener("click", async () => {
+  if (!confirm("Delete all saved snippets?")) return;
+  await chrome.storage.local.set({ snippets: [] });
+  await load();
 });
 
 load();

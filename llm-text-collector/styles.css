@@ -14,3 +14,10 @@ button.danger { border-color: #f5c2c7; color: #b02a37; }
 .edit { display: grid; gap: 6px; margin-top: 6px; }
 .edit input.tags, .edit textarea.note { width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #ddd; border-radius: 6px; }
 .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+
+.text.collapsed {
+  max-height: 3em; /* Adjust as needed to show a few lines */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

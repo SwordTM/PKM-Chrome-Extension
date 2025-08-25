@@ -1,6 +1,6 @@
-import { sha256Hex } from './utils.js';
+import { contentHash } from "./utils.js";
 
-const KEY = 'snippets';
+const KEY = "snippets";
 
 export async function getAll() {
   const res = await chrome.storage.local.get({ [KEY]: [] });
@@ -11,23 +11,42 @@ export async function setAll(items) {
   await chrome.storage.local.set({ [KEY]: items });
 }
 
-export async function addSnippet(snippet) {
+export async function addOne(snippet) {
   const items = await getAll();
-  const contentHash = await sha256Hex((snippet.text || '') + '|' + (snippet.url || ''));
-  const exists = items.some(s => s.contentHash === contentHash);
-  if (!exists) {
-    items.unshift({ ...snippet, contentHash });
-    await setAll(items);
+  let textToHash = "";
+  if (snippet.type === 'TRANSCRIPT_CAPTURED') {
+    textToHash = snippet.title + "|" + snippet.url;
+  } else {
+    textToHash = (snippet.text || "") + "|" + (snippet.url || "");
   }
-  return !exists;
+  const hash = await contentHash(textToHash);
+  const exists = items.some((s) => s.contentHash === hash);
+  if (!exists) {
+    const newSnippet = {
+      ...snippet,
+      id: Date.now().toString(),
+      contentHash: hash,
+      source_type: snippet.type === 'TRANSCRIPT_CAPTURED' ? 'youtube_transcript' : 'web',
+      captured_at: new Date().toISOString(),
+    };
+    items.unshift(newSnippet);
+    await setAll(items);
+    return newSnippet;
+  }
+  return null;
 }
 
-export async function deleteByHash(contentHash) {
+export async function removeById(id) {
   const items = await getAll();
-  const next = items.filter(s => s.contentHash !== contentHash);
+  const next = items.filter((s) => s.id !== id);
   await setAll(next);
 }
 
-export async function clearAll() {
-  await setAll([]);
+export async function updateById(id, updates) {
+  const items = await getAll();
+  const index = items.findIndex((s) => s.id === id);
+  if (index !== -1) {
+    items[index] = { ...items[index], ...updates };
+    await setAll(items);
+  }
 }
