@@ -39,7 +39,9 @@ export async function addOne(snippet) {
 export async function removeById(id) {
   const items = await getAll();
   const next = items.filter((s) => s.id !== id);
-  await setAll(next);
+  if (next.length !== items.length) {
+    await setAll(next);
+  }
 }
 
 export async function updateById(id, updates) {

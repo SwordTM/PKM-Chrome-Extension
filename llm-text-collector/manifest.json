@@ -30,6 +30,16 @@
         "youtube.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "selection_ui.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "action": {

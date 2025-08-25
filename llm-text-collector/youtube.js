@@ -100,12 +100,21 @@ async function handleScrapeTranscript(sendResponse) {
 async function getCaptions(videoId, lang = "en") {
   const response = await fetch(`https://www.youtube.com/watch?v=${videoId}`);
   const html = await response.text();
-  const playerResponseRegex = /ytInitialPlayerResponse\s*=\s*({.+?});/;
+  console.log("Fetched HTML (in getCaptions):\n", html); // Debugging
+  const playerResponseRegex = /ytInitialPlayerResponse\s*=\s*({.+?});(?:var|window|\n|$)/s; // More robust regex with 's' flag
   const match = html.match(playerResponseRegex);
+  console.log("Regex Match (in getCaptions):\n", match); // Debugging
   if (!match) {
     return null;
   }
-  const playerResponse = JSON.parse(match[1]);
+  let playerResponse;
+  try {
+    playerResponse = JSON.parse(match[1]);
+    console.log("Parsed Player Response (in getCaptions):\n", playerResponse); // Debugging
+  } catch (e) {
+    console.error("Failed to parse player response JSON:", e);
+    return null;
+  }
   const captionTracks = playerResponse.captions?.playerCaptionsTracklistRenderer?.captionTracks;
   if (!captionTracks) {
     return null;
@@ -122,14 +131,52 @@ async function getCaptions(videoId, lang = "en") {
 function parseVTT(vtt) {
   const lines = vtt.split("\n");
   const cues = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes("-->")) {
-      const [start, end] = lines[i].split(" --> ").map((time) => {
-        const parts = time.split(":");
-        return +parts[0] * 3600 + +parts[1] * 60 + +parts[2];
-      });
-      cues.push({ start, end, text: lines[i + 1] });
+  let i = 0;
+
+  // Validate WEBVTT header
+  if (!lines[i].startsWith("WEBVTT")) {
+    return [];
+  }
+  i++; // Skip WEBVTT line
+
+  while (i < lines.length) {
+    if (lines[i].trim() === "") {
+      i++; // Skip empty lines
+      continue;
+    }
+
+    // Skip cue number if present
+    if (!isNaN(parseInt(lines[i].trim()))) {
       i++;
+    }
+
+    if (lines[i] && lines[i].includes("-->")) {
+      const [startStr, endStr] = lines[i].split(" --> ").map(s => s.trim());
+      const parseTime = (timeStr) => {
+        const parts = timeStr.split(/[:.]/).map(Number);
+        let seconds = 0;
+        if (parts.length === 4) { // HH:MM:SS.mmm
+          seconds = parts[0] * 3600 + parts[1] * 60 + parts[2] + parts[3] / 1000;
+        } else if (parts.length === 3) { // MM:SS.mmm or SS.mmm
+          seconds = parts[0] * 60 + parts[1] + parts[2] / 1000;
+        } else if (parts.length === 2) { // SS.mmm
+          seconds = parts[0] + parts[1] / 1000;
+        }
+        return seconds;
+      };
+
+      const start = parseTime(startStr);
+      const end = parseTime(endStr);
+
+      i++; // Move to text line
+      let textLines = [];
+      while (i < lines.length && lines[i].trim() !== "" && !lines[i].includes("-->")) {
+        textLines.push(lines[i].trim());
+        i++;
+      }
+      cues.push({ start, end, text: textLines.join("\n") });
+    } else {
+      i++; // Skip unrecognized lines
     }
   }
   return cues;
