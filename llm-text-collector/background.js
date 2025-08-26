@@ -91,8 +91,25 @@ async function exportAllToDownloads() {
   }
 }
 
+// background.js (append or merge with your file)
+const STORAGE_KEY = "snippets";
+
+async function pushSnippet(snippet) {
+  const { [STORAGE_KEY]: arr = [] } = await chrome.storage.local.get(STORAGE_KEY);
+  const withId = { id: crypto.randomUUID(), ...snippet };
+  await chrome.storage.local.set({ [STORAGE_KEY]: [withId, ...arr] });
+  return withId;
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
+    if (msg?.type === "SAVE_SNIPPET" && msg.payload) {
+      const saved = await pushSnippet(msg.payload);
+      // notify any open UIs; your popup reloads on storage change anyway
+      sendResponse({ ok: true, id: saved.id });
+      return;
+    }
+    
     if (msg?.type === "SAVE_SELECTION") {
       await addOne(msg.payload);
       sendResponse({ ok: true });
@@ -132,27 +149,5 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   })();
 
   // keep channel open for async
-  return true;
-});
-
-// background.js (append or merge with your file)
-const STORAGE_KEY = "snippets";
-
-async function pushSnippet(snippet) {
-  const { [STORAGE_KEY]: arr = [] } = await chrome.storage.local.get(STORAGE_KEY);
-  const withId = { id: crypto.randomUUID(), ...snippet };
-  await chrome.storage.local.set({ [STORAGE_KEY]: [withId, ...arr] });
-  return withId;
-}
-
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  (async () => {
-    if (msg?.type === "SAVE_SNIPPET" && msg.payload) {
-      const saved = await pushSnippet(msg.payload);
-      // notify any open UIs; your popup reloads on storage change anyway
-      sendResponse({ ok: true, id: saved.id });
-      return;
-    }
-  })();
   return true;
 });

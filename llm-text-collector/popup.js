@@ -60,23 +60,50 @@ function renderTranscript(item) {
   const segments = Array.isArray(item.segments) ? item.segments : [];
   const fullText = segments.length ? segments.map(s => s.text || "").join("\n") : (item.text || "");
   li.querySelector(".text").textContent = fullText || "(no transcript text)";
-  console.log('Full transcript text:', fullText);
 
   const segmentsEl = li.querySelector(".transcript-segments");
   segmentsEl.innerHTML = "";
-  for (const seg of segments) {
-    const liSeg = document.createElement("li");
-    liSeg.classList.add("flex", "items-start", "gap-2", "text-sm");
-    const tsEl = document.createElement("div");
-    tsEl.classList.add("text-gray-600", "w-16", "shrink-0");
-    tsEl.textContent = seg.ts ?? "";
-    const textEl = document.createElement("div");
-    textEl.classList.add("text-gray-900");
-    textEl.textContent = seg.text ?? "";
-    liSeg.appendChild(tsEl);
-    liSeg.appendChild(textEl);
-    segmentsEl.appendChild(liSeg);
+  let visibleSegmentCount = 5;
+
+  function renderSegments() {
+    segmentsEl.innerHTML = "";
+    const segmentsToRender = segments.slice(0, visibleSegmentCount);
+    for (const seg of segmentsToRender) {
+      const liSeg = document.createElement("li");
+      liSeg.classList.add("flex", "items-start", "gap-2", "text-sm");
+      const tsEl = document.createElement("div");
+      tsEl.classList.add("text-gray-600", "w-16", "shrink-0");
+      tsEl.textContent = seg.ts ?? "";
+      const textEl = document.createElement("div");
+      textEl.classList.add("text-gray-900");
+      textEl.textContent = seg.text ?? "";
+      liSeg.appendChild(tsEl);
+      liSeg.appendChild(textEl);
+      segmentsEl.appendChild(liSeg);
+    }
+
+    if (segments.length > visibleSegmentCount) {
+      const showMoreBtn = document.createElement("button");
+      showMoreBtn.textContent = `Show more (${visibleSegmentCount}/${segments.length})`;
+      showMoreBtn.classList.add("btn-ghost-sm", "mt-2");
+      showMoreBtn.addEventListener("click", () => {
+        visibleSegmentCount += 5;
+        renderSegments();
+      });
+      segmentsEl.appendChild(showMoreBtn);
+    } else if (visibleSegmentCount > 5) {
+      const showLessBtn = document.createElement("button");
+      showLessBtn.textContent = "Show less";
+      showLessBtn.classList.add("btn-ghost-sm", "mt-2");
+      showLessBtn.addEventListener("click", () => {
+        visibleSegmentCount = 5;
+        renderSegments();
+      });
+      segmentsEl.appendChild(showLessBtn);
+    }
   }
+
+  renderSegments();
 
   const sourceEl = li.querySelector(".source");
   sourceEl.textContent = (item.url?.includes("youtube.com") ? "📺" : "🌐") + " " + (new URL(item.url).hostname || "");

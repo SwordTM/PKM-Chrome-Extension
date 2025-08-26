@@ -89,17 +89,25 @@ function showSelectionButton() {
   }
 }
 
-document.addEventListener('mouseup', () => {
-  // Give a small delay to ensure selection is stable
-  setTimeout(showSelectionButton, 50);
-});
-
-document.addEventListener('mousedown', (event) => {
-  // Hide button if clicking outside of it AND not clicking the button itself
-  if (selectionButton && selectionButton.style.display !== 'none' && !selectionButton.contains(event.target)) {
-    selectionButton.style.display = 'none';
-    selectionButton.style.visibility = 'hidden'; // Ensure visibility is also reset
+document.addEventListener('mouseup', (event) => {
+  // Ignore clicks on the button itself
+  if (selectionButton && selectionButton.contains(event.target)) {
+    return;
   }
+
+  // Give a small delay to ensure selection is stable
+  setTimeout(() => {
+    const selection = window.getSelection();
+    const selectedText = selection.toString().trim();
+
+    if (selectedText.length > 0) {
+      showSelectionButton();
+    } else {
+      if (selectionButton) {
+        selectionButton.style.display = 'none';
+      }
+    }
+  }, 50);
 });
 
 // Initialize the button
