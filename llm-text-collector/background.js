@@ -75,22 +75,6 @@ async function removeTranscript(videoId) {
   await saveAll(map);
 }
 
-// optional export: save a pretty JSON file via chrome.downloads
-async function exportAllToDownloads() {
-  const data = await loadAll();
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  try {
-    await chrome.downloads.download({
-      url,
-      filename: `yt_transcripts_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`,
-      saveAs: true
-    });
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
-  }
-}
-
 // background.js (append or merge with your file)
 const STORAGE_KEY = "snippets";
 
@@ -136,11 +120,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     if (msg?.type === "TRANSCRIPTS_REMOVE" && msg.videoId) {
       await removeTranscript(msg.videoId);
-      sendResponse({ ok: true });
-      return;
-    }
-    if (msg?.type === "TRANSCRIPTS_EXPORT_ALL") {
-      await exportAllToDownloads();
       sendResponse({ ok: true });
       return;
     }

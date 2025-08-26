@@ -5,8 +5,6 @@ const els = {
   list: document.getElementById("list"),
   empty: document.getElementById("empty"),
   capture: document.getElementById("capturePage"),
-  exportJson: document.getElementById("exportJson"),
-  sendToLLM: document.getElementById("sendToLLM"),
   clearAll: document.getElementById("clearAll"),
   // YouTube Buttons
   ytScrapeTranscript: document.getElementById("ytScrapeTranscript"),
@@ -119,7 +117,7 @@ async function load() {
     els.empty.style.display = "block";
   } else {
     els.empty.style.display = "none";
-    items.forEach(renderItem);
+    items.reverse().forEach(renderItem);
   }
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (isYouTubeWatch(tab?.url || "")) {
@@ -235,34 +233,6 @@ els.list.addEventListener("click", async (e) => {
         els.empty.style.display = "block";   
       }
     }
-  }
-});
-
-els.exportJson.addEventListener("click", async () => {
-  const items = await getAll();
-  const blob = new Blob([JSON.stringify(items, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `llm_inbox_${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-});
-
-els.sendToLLM.addEventListener("click", async () => {
-  const items = await getAll();
-  try {
-    const res = await fetch("http://localhost:8000/ingest", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ snippets: items }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    alert("Sent to LLM pipeline.");
-  } catch (e) {
-    alert("Failed to send to LLM: " + e.message);
   }
 });
 

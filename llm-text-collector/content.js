@@ -1,86 +1,3 @@
-let selectionButton = null;
-
-async function handleSelectionCapture(selectionText) {
-  if (!selectionButton) return;
-  selectionButton.disabled = true;
-  const originalText = selectionButton.textContent;
-  selectionButton.textContent = "Saving...";
-
-  const payload = {
-    type: "SAVE_SELECTION",
-    payload: {
-      text: selectionText,
-      title: document.title,
-      url: location.href,
-      captured_at: new Date().toISOString(),
-      source_type: "web_selection",
-    },
-  };
-
-  try {
-    await chrome.runtime.sendMessage(payload);
-    selectionButton.textContent = "Saved ✓";
-  } catch (e) {
-    console.error("Error saving selection:", e);
-    selectionButton.textContent = "Error!";
-  } finally {
-    setTimeout(() => {
-      selectionButton.textContent = originalText;
-      selectionButton.disabled = false;
-      hideSelectionButton();
-    }, 2000);
-  }
-}
-
-function showSelectionButton(selection) {
-  if (!selectionButton) {
-    selectionButton = document.createElement("button");
-    selectionButton.id = "llm-inbox-selection-btn";
-    document.body.appendChild(selectionButton);
-    Object.assign(selectionButton.style, {
-      position: "absolute",
-      zIndex: 999999,
-      padding: "4px 8px",
-      borderRadius: "4px",
-      border: "1px solid #ccc",
-      fontSize: "12px",
-      cursor: "pointer",
-      background: "#f0f0f0",
-      color: "#333",
-      boxShadow: "0 2px 5px rgba(0,0,0,0.2)",
-      display: "block",
-    });
-    selectionButton.addEventListener("mouseenter", () => (selectionButton.style.background = "#e0e0e0"));
-    selectionButton.addEventListener("mouseleave", () => (selectionButton.style.background = "#f0f0f0"));
-  }
-
-  const range = selection.getRangeAt(0);
-  const rect = range.getBoundingClientRect();
-
-  selectionButton.style.top = `${window.scrollY + rect.bottom + 5}px`;
-  selectionButton.style.left = `${window.scrollX + rect.left}px`;
-  selectionButton.textContent = "Save Selection";
-  selectionButton.onclick = () => handleSelectionCapture(selection.toString().trim());
-  selectionButton.style.display = "block";
-}
-
-function hideSelectionButton() {
-  if (selectionButton) {
-    selectionButton.style.display = "none";
-  }
-}
-
-const waitFor = (sel, { root = document, timeout = 10000, poll = 100 } = {}) =>
-  new Promise((res, rej) => {
-    const t0 = performance.now();
-    (function tick(){
-      const el = root.querySelector(sel);
-      if (el) return res(el);
-      if (performance.now() - t0 > timeout) return rej(new Error("Timeout: " + sel));
-      setTimeout(tick, poll);
-    })();
-  });
-
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "PAGE_EXTRACT") {
     try {
@@ -104,25 +21,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return location.hostname.includes("youtube.com") && location.pathname.includes("/watch");
   }
 
-  function handleSelectionChange() {
-    const selection = window.getSelection();
-    const selectedText = selection.toString().trim();
-
+  function manageYouTubeButtonVisibility() {
     if (isYouTubeWatchPage()) {
-      if (!youtubeButton) {
-        injectYouTubeButton();
-      }
+      injectYouTubeButton();
       youtubeButton.style.display = "block";
       youtubeButton.textContent = "Capture Transcript";
       youtubeButton.onclick = handleTranscriptCapture;
-      hideSelectionButton();
     } else {
-      if (selectedText) {
-        showSelectionButton(selection);
-        hideYouTubeButton();
-      } else {
-        hideSelectionButton();
-      }
+      hideYouTubeButton();
     }
   }
 
@@ -236,17 +142,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       document.title.replace(" - YouTube", "").trim();
     return { videoId, title };
   };
-    const waitFor = (selector, { root = document, timeout = 10000, poll = 100 } = {}) =>
-    new Promise((resolve, reject) => {
-      const t0 = performance.now();
-      const tick = () => {
-        const el = root.querySelector(selector);
-        if (el) return resolve(el);
-        if (performance.now() - t0 > timeout) return reject(new Error(`Timeout waiting for ${selector}`));
-        setTimeout(tick, poll,);
-      };
-      tick();
-    });
+    
 
   const openTranscriptFromDescription = async () => {
     const alreadyOpen = document.querySelector(
@@ -320,22 +216,97 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return segments;
   };
 
-  document.addEventListener("selectionchange", handleSelectionChange);
-  document.addEventListener("mousedown", (event) => {
-    // Check if the click target is the selection button itself
-    // or if there's no selection button (meaning it's hidden or not yet created)
-    if (event.target.id !== 'llm-inbox-selection-btn' && event.target.closest('#llm-inbox-selection-btn') === null) {
-      hideSelectionButton();
-    }
-  });
-
+    document.addEventListener("DOMContentLoaded", manageYouTubeButtonVisibility);
   let lastUrl = location.href;
   new MutationObserver(() => {
     if (location.href !== lastUrl) {
       lastUrl = location.href;
-      setTimeout(handleSelectionChange, 600);
+      setTimeout(manageYouTubeButtonVisibility, 600);
     }
   }).observe(document, { subtree: true, childList: true });
 
-  handleSelectionChange();
+  manageYouTubeButtonVisibility(); // Initial call
+
+  // Selection handling
+  document.addEventListener("mouseup", () => {
+    const selectedText = window.getSelection().toString().trim();
+    if (selectedText.length > 0) {
+      showSelectionButton(window.getSelection());
+    } else {
+      hideSelectionButton();
+    }
+  });
+
+  let selectionButton = null;
+
+  async function handleSelectionCapture(selectionText) {
+    if (!selectionButton) return;
+    selectionButton.disabled = true;
+    const originalText = selectionButton.textContent;
+    selectionButton.textContent = "Saving...";
+
+    const payload = {
+      type: "SAVE_SELECTION",
+      payload: {
+        text: selectionText,
+        title: document.title,
+        url: location.href,
+        captured_at: new Date().toISOString(),
+        source_type: "web_selection",
+      },
+    };
+
+    try {
+      await chrome.runtime.sendMessage(payload);
+      selectionButton.textContent = "Saved ✓";
+    } catch (e) {
+      console.error("Error saving selection:", e);
+      selectionButton.textContent = "Error!";
+    } finally {
+      setTimeout(() => {
+        selectionButton.textContent = originalText;
+        selectionButton.disabled = false;
+        hideSelectionButton();
+      }, 2000);
+    }
+  }
+
+  function showSelectionButton(selection) {
+    if (!selectionButton) {
+      selectionButton = document.createElement("button");
+      selectionButton.id = "llm-inbox-selection-btn";
+      document.body.appendChild(selectionButton);
+      Object.assign(selectionButton.style, {
+        position: "absolute",
+        zIndex: 999999,
+        padding: "4px 8px",
+        borderRadius: "4px",
+        border: "1px solid #4CAF50",
+        fontSize: "12px",
+        cursor: "pointer",
+        background: "#4CAF50",
+        color: "#ffffff",
+        boxShadow: "0 2px 5px rgba(0,0,0,0.2)",
+        display: "block",
+      });
+      selectionButton.addEventListener("mouseenter", () => (selectionButton.style.background = "#45a049"));
+      selectionButton.addEventListener("mouseleave", () => (selectionButton.style.background = "#4CAF50"));
+    }
+
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+
+    selectionButton.style.top = `${window.scrollY + rect.bottom + 5}px`;
+    selectionButton.style.left = `${window.scrollX + rect.left}px`;
+    selectionButton.textContent = "Save Selection";
+    selectionButton.onclick = () => handleSelectionCapture(selection.toString().trim());
+    selectionButton.style.display = "block";
+  }
+
+  function hideSelectionButton() {
+    if (selectionButton) {
+      selectionButton.style.display = "none";
+    }
+  }
+
 })();

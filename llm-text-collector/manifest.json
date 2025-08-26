@@ -37,9 +37,11 @@
         "https://*/*"
       ],
       "js": [
-        "selection_ui.js"
+        "content.js",
+        "scraper.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "type": "module"
     }
   ],
   "action": {
