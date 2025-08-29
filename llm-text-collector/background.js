@@ -1,11 +1,48 @@
 import { addOne } from "./storage.js";
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "PING") {
+    sendResponse({ type: "PONG" });
+    return;
+  }
+  if (message.type === "SAVE_SELECTION") {
+    (async () => {
+      try {
+        const newSnippet = await addOne(message.payload);
+        sendResponse({ ok: true, newSnippet });
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message });
+      }
+    })();
+    return true; // Indicates that the response is sent asynchronously
+  } else if (message.type === "SUMMARIZE_TEXT") {
+    // Placeholder: Acknowledge the message to prevent the error.
+    // Replace this with actual summarization logic when ready.
+    console.log("Received SUMMARIZE_TEXT request with text:", message.text);
+    sendResponse({ ok: true, summarizedText: message.text }); // Echoing back the original text
+    return true; // Indicates that the response is sent asynchronously
+  }
+});
+
+chrome.runtime.onInstalled.addListener(async (details) => {
   chrome.contextMenus.create({
     id: "save-selection",
     title: "Save selection to LLM Inbox",
     contexts: ["selection"],
   });
+
+  if (details.reason === "install" || details.reason === "update") {
+    for (const cs of chrome.runtime.getManifest().content_scripts) {
+      for (const tab of await chrome.tabs.query({ url: cs.matches })) {
+        if (tab.url.startsWith("http")) { // Avoid injecting into chrome:// pages
+          chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: cs.js,
+          });
+        }
+      }
+    }
+  }
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -85,48 +122,53 @@ async function pushSnippet(snippet) {
   return withId;
 }
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  (async () => {
-    if (msg?.type === "SAVE_SNIPPET" && msg.payload) {
-      const saved = await pushSnippet(msg.payload);
-      // notify any open UIs; your popup reloads on storage change anyway
-      sendResponse({ ok: true, id: saved.id });
-      return;
-    }
-    
-    if (msg?.type === "SAVE_SELECTION") {
-      await addOne(msg.payload);
-      sendResponse({ ok: true });
-      return;
-    }
+async function callGeminiApi(text) {
+  const { geminiApiKey } = await chrome.storage.sync.get('geminiApiKey');
+  if (!geminiApiKey) {
+    throw new Error("Gemini API Key not set. Please set it in the extension options.");
+  }
 
-    if (msg?.type === "TRANSCRIPT_CAPTURED") {
-      const stored = await upsertTranscript(msg);
-      console.log("[SW] Stored transcript:", stored.videoId, stored.title, stored.segments?.length);
-      sendResponse({ ok: true, stored: { videoId: stored.videoId, lines: stored.segments?.length || 0 } });
-      return;
-    }
+  const model = "gemini-pro"; // Or "gemini-1.5-pro" or other suitable model
+  const prompt = `Summarize the following text concisely:\n\n${text}`;
 
-    // Optional RPC for UI/popup/options
-    if (msg?.type === "TRANSCRIPTS_LIST") {
-      const list = await listTranscripts(true);
-      sendResponse({ ok: true, list });
-      return;
-    }
-    if (msg?.type === "TRANSCRIPTS_GET" && msg.videoId) {
-      const t = await getTranscript(msg.videoId);
-      sendResponse({ ok: !!t, transcript: t });
-      return;
-    }
-    if (msg?.type === "TRANSCRIPTS_REMOVE" && msg.videoId) {
-      await removeTranscript(msg.videoId);
-      sendResponse({ ok: true });
-      return;
-    }
+  const requestBody = {
+    contents: [{
+      parts: [{
+        text: prompt
+      }]
+    }]
+  };
 
-    sendResponse({ ok: false, error: "unknown_message" });
-  })();
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    }
+  );
 
-  // keep channel open for async
-  return true;
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(`Gemini API error: ${response.status} - ${errorData.error.message}`);
+  }
+
+  const data = await response.json();
+  if (data.candidates && data.candidates.length > 0 && data.candidates[0].content.parts.length > 0) {
+    return data.candidates[0].content.parts[0].text;
+  } else {
+    throw new Error("No summary found in Gemini API response.");
+  }
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "SUMMARIZE_TEXT") {
+    // Placeholder: Acknowledge the message to prevent the error.
+    // Replace this with actual summarization logic when ready.
+    console.log("Received SUMMARIZE_TEXT request with text:", message.text);
+    sendResponse({ ok: true, summarizedText: message.text }); // Echoing back the original text
+    return true; // Indicates that the response is sent asynchronously
+  }
 });

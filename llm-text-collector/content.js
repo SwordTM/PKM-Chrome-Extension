@@ -15,6 +15,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 (function () {
+  if (window.llmTextCollectorContentLoaded) {
+    return;
+  }
+  window.llmTextCollectorContentLoaded = true;
+
   let youtubeButton = null;
 
   function isYouTubeWatchPage() {
@@ -239,10 +244,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   let selectionButton = null;
 
+  function cleanup() {
+    hideSelectionButton();
+    // Potentially remove other listeners or UI elements here in the future
+  }
+
   async function handleSelectionCapture(selectionText) {
     if (!selectionButton) return;
+
     selectionButton.disabled = true;
     const originalText = selectionButton.textContent;
+    selectionButton.textContent = "";
+    selectionButton.classList.add("loading-dots");
+
+    try {
+      await chrome.runtime.sendMessage({ type: "PING" });
+    } catch (e) {
+      cleanup();
+      return;
+    }
+
+    selectionButton.classList.remove("loading-dots");
     selectionButton.textContent = "Saving...";
 
     const payload = {
@@ -260,13 +282,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       await chrome.runtime.sendMessage(payload);
       selectionButton.textContent = "Saved ✓";
     } catch (e) {
-      console.error("Error saving selection:", e);
-      selectionButton.textContent = "Error!";
+      if (e.message.includes("Extension context invalidated")) {
+        cleanup();
+      } else {
+        console.error("Error saving selection:", e);
+        selectionButton.textContent = "Error!";
+      }
     } finally {
       setTimeout(() => {
-        selectionButton.textContent = originalText;
-        selectionButton.disabled = false;
-        hideSelectionButton();
+        if (selectionButton && !selectionButton.classList.contains("loading-dots")) {
+          selectionButton.classList.remove("loading-dots");
+          selectionButton.textContent = originalText;
+          selectionButton.disabled = false;
+          hideSelectionButton();
+        }
       }, 2000);
     }
   }

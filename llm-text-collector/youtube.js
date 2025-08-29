@@ -14,19 +14,6 @@ const waitFor = (selector, { root = document, timeout = 10000, poll = 100 } = {}
 
 async function handleScrapeTranscript(sendResponse) {
   try {
-    // Try more robust selector for the "more actions" button
-    let moreActionsButton = document.querySelector('button[aria-label="More actions"]');
-    if (!moreActionsButton) {
-      // Fallback to previous selector if aria-label not found
-      moreActionsButton = document.querySelector('ytd-menu-renderer.ytd-video-primary-info-renderer > #button-shape > button');
-    }
-
-    if (!moreActionsButton) {
-      throw new Error("More actions button not found.");
-    }
-    moreActionsButton.click();
-    await waitFor('tp-yt-paper-listbox', { timeout: 2000 }); // Wait for the menu to appear
-
     // Find the "Show transcript" button by its text content using XPath
     const showTranscriptButton = document.evaluate(
       "//*[text()='Show transcript']",

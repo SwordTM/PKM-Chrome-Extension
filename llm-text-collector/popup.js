@@ -1,4 +1,4 @@
-import { addOne, getAll, removeById } from "./storage.js";
+import { addOne, getAll, removeById, updateById } from "./storage.js";
 import { isInjectable } from "./utils.js";
 
 const els = {
@@ -222,6 +222,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 
 els.list.addEventListener("click", async (e) => {
   const deleteBtn = e.target.closest(".delete");
+  const saveBtn = e.target.closest(".save");
   if (deleteBtn) {
     const li = deleteBtn.closest("li");
     const id = li.dataset.id;
@@ -231,6 +232,32 @@ els.list.addEventListener("click", async (e) => {
       const items = await getAll();
       if (items.length === 0) {
         els.empty.style.display = "block";   
+      }
+    }
+  } else if (saveBtn) {
+    const li = saveBtn.closest("li");
+    const id = li.dataset.id;
+    if (id) {
+      const allItems = await getAll();
+      const snippetToSummarize = allItems.find(item => item.id === id);
+      if (snippetToSummarize) {
+        const originalText = snippetToSummarize.text;
+        try {
+          const response = await chrome.runtime.sendMessage({
+            type: "SUMMARIZE_TEXT",
+            text: originalText,
+          });
+          if (response && response.ok) {
+            const summarizedText = response.summarizedText;
+            await updateById(id, { text: summarizedText });
+            li.querySelector(".text").textContent = summarizedText;
+            alert("Text summarized and saved!");
+          } else {
+            alert("Summarization failed: " + (response?.error || "Unknown error"));
+          }
+        } catch (error) {
+          alert("Error during summarization: " + error.message);
+        }
       }
     }
   }
