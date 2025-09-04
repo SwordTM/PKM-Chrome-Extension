@@ -13,15 +13,17 @@ const waitFor = (selector, { root = document, timeout = 10000, poll = 100 } = {}
   });
 
 async function handleScrapeTranscript(sendResponse) {
+  console.log("handleScrapeTranscript called");
   try {
     // Find the "Show transcript" button by its text content using XPath
     const showTranscriptButton = document.evaluate(
-      "//*[text()='Show transcript']",
+      "//button[contains(., 'Show transcript')]",
       document,
       null,
       XPathResult.FIRST_ORDERED_NODE_TYPE,
       null
     ).singleNodeValue;
+    console.log("showTranscriptButton:", showTranscriptButton);
 
 
     if (!showTranscriptButton) {
@@ -32,6 +34,7 @@ async function handleScrapeTranscript(sendResponse) {
 
     // Wait for the transcript renderer to appear
     const transcriptRenderer = document.querySelector('ytd-transcript-renderer');
+    console.log("transcriptRenderer:", transcriptRenderer);
     if (!transcriptRenderer) {
         throw new Error("Transcript renderer not found.");
     }
@@ -47,6 +50,7 @@ async function handleScrapeTranscript(sendResponse) {
         segmentElements = transcriptRenderer.querySelectorAll('ytd-transcript-segment-renderer');
       }
     }
+    console.log("segmentElements:", segmentElements);
 
     if (!segmentElements || segmentElements.length === 0) {
         throw new Error("Transcript segments not found even after trying to expand.");
@@ -60,6 +64,7 @@ async function handleScrapeTranscript(sendResponse) {
       const text = textEl ? textEl.innerText.trim() : '';
       return { ts, text };
     });
+    console.log("segments:", segments);
 
     const payload = {
       type: "TRANSCRIPT_CAPTURED",
@@ -68,6 +73,7 @@ async function handleScrapeTranscript(sendResponse) {
       segments: segments,
       capturedAt: new Date().toISOString(),
     };
+    console.log("sending payload:", payload);
     chrome.runtime.sendMessage(payload);
     sendResponse({ ok: true });
 

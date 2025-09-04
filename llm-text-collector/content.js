@@ -221,16 +221,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return segments;
   };
 
-    document.addEventListener("DOMContentLoaded", manageYouTubeButtonVisibility);
+  function isLinkedInProfilePage() {
+    return location.hostname.includes("linkedin.com") && location.pathname.startsWith("/in/");
+  }
+
+  function manageLinkedInScript() {
+    if (isLinkedInProfilePage()) {
+      chrome.runtime.sendMessage({ type: "LINKEDIN_PROFILE_PAGE" });
+    }
+  }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      manageYouTubeButtonVisibility();
+      manageLinkedInScript();
+    });
   let lastUrl = location.href;
   new MutationObserver(() => {
     if (location.href !== lastUrl) {
       lastUrl = location.href;
       setTimeout(manageYouTubeButtonVisibility, 600);
+      setTimeout(manageLinkedInScript, 600);
     }
   }).observe(document, { subtree: true, childList: true });
 
   manageYouTubeButtonVisibility(); // Initial call
+  manageLinkedInScript(); // Initial call
 
   // Selection handling
   document.addEventListener("mouseup", () => {
